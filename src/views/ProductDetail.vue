@@ -47,7 +47,9 @@
                 </ion-row>
               </ion-item>
             </ion-list>
-            <div>
+
+            <ProductFeatures2 :productGroupId="currentProductId" @selected-variant="handleFeatureSelected" @selected_variant="receiveEmit"/>
+            <div> 
               <ion-segment :value="selectedSegment">
                 <ion-segment-button value="inStore" @click="selectedSegment = 'inStore'">
                   <ion-label>In Store</ion-label>
@@ -168,6 +170,7 @@ import { sortSizes } from '@/apparel-sorter';
 import OtherStoresInventoryModal from "./OtherStoresInventoryModal.vue";
 import { DxpShopifyImg, getProductIdentificationValue, translate, useProductIdentificationStore, useUserStore } from "@hotwax/dxp-components";
 import logger from "@/logger";
+import ProductFeatures2 from "./ProductFeatures2.vue";
 
 export default defineComponent({
   name: "ProductDetail",
@@ -191,7 +194,8 @@ export default defineComponent({
     IonTitle,
     IonThumbnail,
     IonToolbar,
-    DxpShopifyImg
+    DxpShopifyImg,
+    ProductFeatures2
   },
   data() {
     return {
@@ -204,7 +208,8 @@ export default defineComponent({
       warehouseInventory: 0,
       otherStoresInventoryDetails: [] as any,
       selectedSegment: 'inStore',
-      queryString: ''
+      queryString: '',
+      currentProductId: this.$route.params.productId
     }
   },
   computed: {
@@ -225,7 +230,21 @@ export default defineComponent({
     }
   },
   methods: {
+    receiveEmit(selectedVariant:string ) {  
+      console.log('Received emit:', selectedVariant);
+      alert(`You clicked: ${selectedVariant}`);
+    },
+
     //For fetching all the orders for this product & facility.
+    handleFeatureSelected({ featureType, option }: { featureType: string, option: string }) {
+      console.log('Feature selected:', featureType, option);
+      if (featureType === 'COLOR') {
+        this.selectedColor = option;
+      } else if (featureType === 'SIZE') {
+        this.selectedSize = option;
+      }
+      this.updateVariant();
+    },
     async getOrderDetails() {
       await this.store.dispatch("order/getOrderDetails", { viewSize: 200, facilityId: this.currentFacility?.facilityId, productId: this.currentVariant.productId });
     },
@@ -250,26 +269,26 @@ export default defineComponent({
     },
     async updateVariant() {
       let variant;
-      if(this.selectedColor || this.selectedSize) {
+      if (this.selectedColor || this.selectedSize) {
         variant = this.product.variants.find((variant: any) => {
           const hasSize = getFeature(variant.featureHierarchy, '1/SIZE/') === this.selectedSize;
           const hasColor = getFeature(variant.featureHierarchy, '1/COLOR/') === this.selectedColor;
           return hasSize && hasColor;
-        })
+        });
 
         // if the selected size is not available for that color, default it to the first size available
-        if(!variant) {
+        if (!variant) {
           this.selectedSize = this.features[this.selectedColor][0];
-          variant = this.product.variants.find((variant: any) => getFeature(variant.featureHierarchy, '1/SIZE/') === this.selectedSize)
+          variant = this.product.variants.find((variant: any) => getFeature(variant.featureHierarchy, '1/SIZE/') === this.selectedSize);
           showToast(translate("Selected variant not available"));
         }
       }
-      
+
       // if the variant does not have color or size as features
       this.currentVariant = variant || this.product.variants[0];
       await this.checkInventory();
       await this.getOrderDetails();
-      await this.store.dispatch('stock/fetchStock', { productId: this.currentVariant.productId })
+      await this.store.dispatch('stock/fetchStock', { productId: this.currentVariant.productId });
       await this.store.dispatch('stock/fetchInventoryCount', { productId: this.currentVariant.productId });
       await this.store.dispatch('stock/fetchReservedQuantity', { productId: this.currentVariant.productId });
     },
@@ -369,4 +388,3 @@ export default defineComponent({
   }
 }
 </style>
- 
