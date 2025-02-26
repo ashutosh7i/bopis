@@ -25,30 +25,9 @@
               <!-- Price is given undefined to $n funtction on first render, hence, conditional rendering with empty string -->
               <ion-note slot="end">{{ currentVariant.LIST_PRICE_PURCHASE_USD_STORE_GROUP_price ? $n(currentVariant.LIST_PRICE_PURCHASE_USD_STORE_GROUP_price, 'currency', currency ) : '' }}</ion-note>
             </ion-item>
+           
+        <DxpProductFeatures :productGroupId="currentProductId"  @selected_variant="receiveEmit"/> 
   
-            <ion-list v-if="selectedColor">
-              <ion-list-header>{{ translate("Colors") }}</ion-list-header>
-              <ion-item lines="none">
-                <ion-row>
-                  <ion-chip :outline="selectedColor !== colorFeature" :key="colorFeature" v-for="colorFeature in Object.keys(features)" @click="selectedColor !== colorFeature && applyFeature(colorFeature, 'color')">
-                    <ion-label class="ion-text-wrap">{{ colorFeature }}</ion-label>
-                  </ion-chip>
-                </ion-row>
-              </ion-item>
-            </ion-list>
-  
-            <ion-list v-if="selectedSize">
-              <ion-list-header>{{ translate("Sizes") }} </ion-list-header>
-              <ion-item lines="none">
-                <ion-row>
-                  <ion-chip :outline="selectedSize !== sizeFeature" :key="sizeFeature" v-for="sizeFeature in features[selectedColor]" @click="selectedSize !== sizeFeature && applyFeature(sizeFeature, 'size')">
-                    <ion-label class="ion-text-wrap">{{ sizeFeature }}</ion-label>
-                  </ion-chip>
-                </ion-row>
-              </ion-item>
-            </ion-list>
-
-            <ProductFeatures2 :productGroupId="currentProductId" @selected-variant="handleFeatureSelected" @selected_variant="receiveEmit"/>
             <div> 
               <ion-segment :value="selectedSegment">
                 <ion-segment-button value="inStore" @click="selectedSegment = 'inStore'">
@@ -144,7 +123,6 @@ import {
   IonBadge,
   IonButton,
   IonCard,
-  IonChip,
   IonContent,
   IonHeader,
   IonItem,
@@ -153,7 +131,6 @@ import {
   IonListHeader,
   IonNote,
   IonPage,
-  IonRow,
   IonSegment,
   IonSegmentButton,
   IonTitle,
@@ -164,13 +141,11 @@ import {
 import { computed, defineComponent } from "vue";
 import { mapGetters, useStore } from "vuex";
 import { StockService } from '@/services/StockService'
-import { getFeature, showToast } from "@/utils";
+import { showToast } from "@/utils";
 import { hasError } from '@/adapter'
-import { sortSizes } from '@/apparel-sorter';
 import OtherStoresInventoryModal from "./OtherStoresInventoryModal.vue";
-import { DxpShopifyImg, getProductIdentificationValue, translate, useProductIdentificationStore, useUserStore } from "@hotwax/dxp-components";
+import { DxpShopifyImg, getProductIdentificationValue, translate, useProductIdentificationStore, useUserStore,DxpProductFeatures } from "@hotwax/dxp-components";
 import logger from "@/logger";
-import ProductFeatures2 from "./ProductFeatures2.vue";
 
 export default defineComponent({
   name: "ProductDetail",
@@ -179,7 +154,6 @@ export default defineComponent({
     IonBadge,
     IonButton,
     IonCard,
-    IonChip,
     IonContent,
     IonHeader,
     IonItem,
@@ -188,14 +162,13 @@ export default defineComponent({
     IonListHeader,
     IonNote,
     IonPage,
-    IonRow,
     IonSegment,
     IonSegmentButton,
     IonTitle,
     IonThumbnail,
     IonToolbar,
     DxpShopifyImg,
-    ProductFeatures2
+    DxpProductFeatures
   },
   data() {
     return {
@@ -225,72 +198,29 @@ export default defineComponent({
   async beforeMount() {
     await this.store.dispatch('product/setCurrent', { productId: this.$route.params.productId })
     if (this.product.variants) {
-      this.getFeatures()
-      await this.updateVariant()
+      await this.updateVariantById(this.product.variants[0].productId);
     }
   },
-  methods: {
-    receiveEmit(selectedVariant:string ) {  
-      console.log('Received emit:', selectedVariant);
-      alert(`You clicked: ${selectedVariant}`);
+  methods:  {
+      receiveEmit(selectedVariant: string) {
+      this.updateVariantById(selectedVariant);
     },
 
-    //For fetching all the orders for this product & facility.
-    handleFeatureSelected({ featureType, option }: { featureType: string, option: string }) {
-      console.log('Feature selected:', featureType, option);
-      if (featureType === 'COLOR') {
-        this.selectedColor = option;
-      } else if (featureType === 'SIZE') {
-        this.selectedSize = option;
+    async updateVariantById(variantId: string) {
+      const variant = this.product.variants.find((variant: any) => variant.productId === variantId);
+      if (variant) {
+        this.currentVariant = variant;
+        await this.checkInventory();
+        await this.getOrderDetails();
+        await this.store.dispatch('stock/fetchStock', { productId: this.currentVariant.productId });
+        await this.store.dispatch('stock/fetchInventoryCount', { productId: this.currentVariant.productId });
+        await this.store.dispatch('stock/fetchReservedQuantity', { productId: this.currentVariant.productId });
+      } else {
+        showToast(translate("Selected variant not available"));
       }
-      this.updateVariant();
     },
     async getOrderDetails() {
       await this.store.dispatch("order/getOrderDetails", { viewSize: 200, facilityId: this.currentFacility?.facilityId, productId: this.currentVariant.productId });
-    },
-    async applyFeature(feature: string, type: string) {
-      if(type === 'color') this.selectedColor = feature;
-      else if(type === 'size') this.selectedSize = feature
-      await this.updateVariant();
-    },
-    getFeatures() {
-      const features = {} as any
-      this.product.variants.map((variant: any) => {
-        const size = getFeature(variant.featureHierarchy, '1/SIZE/');
-        const color = getFeature(variant.featureHierarchy, '1/COLOR/');
-        if (!features[color]) features[color] = [size];
-        else if(!features[color].includes(size)) features[color].push(size);
-      });
-
-      Object.keys(features).forEach((color) => this.features[color] = sortSizes(features[color]))
-
-      this.selectedColor = Object.keys(this.features)[0];
-      this.selectedSize = this.features[this.selectedColor][0];
-    },
-    async updateVariant() {
-      let variant;
-      if (this.selectedColor || this.selectedSize) {
-        variant = this.product.variants.find((variant: any) => {
-          const hasSize = getFeature(variant.featureHierarchy, '1/SIZE/') === this.selectedSize;
-          const hasColor = getFeature(variant.featureHierarchy, '1/COLOR/') === this.selectedColor;
-          return hasSize && hasColor;
-        });
-
-        // if the selected size is not available for that color, default it to the first size available
-        if (!variant) {
-          this.selectedSize = this.features[this.selectedColor][0];
-          variant = this.product.variants.find((variant: any) => getFeature(variant.featureHierarchy, '1/SIZE/') === this.selectedSize);
-          showToast(translate("Selected variant not available"));
-        }
-      }
-
-      // if the variant does not have color or size as features
-      this.currentVariant = variant || this.product.variants[0];
-      await this.checkInventory();
-      await this.getOrderDetails();
-      await this.store.dispatch('stock/fetchStock', { productId: this.currentVariant.productId });
-      await this.store.dispatch('stock/fetchInventoryCount', { productId: this.currentVariant.productId });
-      await this.store.dispatch('stock/fetchReservedQuantity', { productId: this.currentVariant.productId });
     },
     async checkInventory() {
       this.currentStoreInventory = this.otherStoresInventory = this.warehouseInventory = 0
